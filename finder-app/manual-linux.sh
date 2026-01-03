@@ -1,6 +1,7 @@
 #!/bin/bash
 # Script outline to install and build kernel.
 # Author: Siddhant Jajoo.
+# Assignment Completed By: Biplav Poudel
 
 set -e
 set -u
@@ -34,7 +35,21 @@ if [ ! -e ${OUTDIR}/linux-stable/arch/${ARCH}/boot/Image ]; then
     echo "Checking out version ${KERNEL_VERSION}"
     git checkout ${KERNEL_VERSION}
 
-    # TODO: Add your kernel build steps here
+    # TODO: Kernel Building Steps
+	# QEMU build - clean: deep cleans kernel build tree by removing .config files
+	make ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu-mrproper
+	
+	#QEMU build - defconfig: configuring virt arm devboard for simulation in QEMU
+	make ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu-defconfig
+
+	#QEMU build - vmlinux: building kernel image for booting with QEMU
+	make ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu-all
+	
+	#QEMU build - module: building any modules needed for the kernel
+	make ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu-modules
+	
+	#QEMU build - devicetree
+	make ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu-dtbs	
 fi
 
 echo "Adding the Image in outdir"
