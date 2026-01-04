@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 # Script outline to install and build kernel.
 # Author: Siddhant Jajoo.
 # Assignment Completed By: Biplav Poudel
@@ -46,7 +46,7 @@ if [ ! -e ${OUTDIR}/linux-stable/arch/${ARCH}/boot/Image ]; then
 	make -j4 ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} all
 	
 	#QEMU build - module: building any modules needed for the kernel
-	make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} modules
+	#make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} modules
 	
 	#QEMU build - devicetree
 	make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} dtbs
@@ -70,7 +70,7 @@ ROOTFS=${OUTDIR}/rootfs
 mkdir -p ${ROOTFS}
 cd "$ROOTFS"
 mkdir -p bin dev etc home lib lib64 proc sbin sys tmp usr var
-mkdir -p usr/bin usr/lib usr/sbin
+mkdir -p usr/bin usr/lib usr/sbin usr/lib64
 mkdir -p var/log
 
 cd "$OUTDIR"
@@ -117,7 +117,7 @@ make clean
 make CROSS_COMPILE=${CROSS_COMPILE}   #gcc is appended in Makefile
 
 # Copy the finder related scripts and executables to the /home directory on the target rootfs
-cp -r ./writer ./finder.sh ./conf/ ./finder-test.sh ./autorun-qemu.sh ${ROOTFS}/home/
+cp -rL ./writer ./finder.sh ./conf/ ./finder-test.sh ./autorun-qemu.sh ${ROOTFS}/home/
 
 #Chown the root directory
 cd "$ROOTFS"

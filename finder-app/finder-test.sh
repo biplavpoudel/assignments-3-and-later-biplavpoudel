@@ -16,7 +16,7 @@ then
 	if [ $# -lt 1 ]
 	then
 		echo "Using default value ${NUMFILES} for number of files to write"
-	else
+		else
 		NUMFILES=$1
 	fi	
 else
@@ -32,7 +32,7 @@ echo "Writing ${NUMFILES} files containing string ${WRITESTR} to ${WRITEDIR}"
 rm -rf "${WRITEDIR}"
 
 # create $WRITEDIR if not assignment1
-assignment=`cat ../conf/assignment.txt`
+assignment=`cat ./conf/assignment.txt`
 
 if [ $assignment != 'assignment1' ]
 then
