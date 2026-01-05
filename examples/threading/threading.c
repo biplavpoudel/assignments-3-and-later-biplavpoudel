@@ -2,7 +2,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <erno.h>
+#include <errno.h>
 #include <time.h>  // usleep() has been deprecated so using nanosleep()
 #include <math.h>
 #include <string.h>
@@ -75,15 +75,49 @@ void* threadfunc(void* thread_param)
 		thread_args->thread_complete_success = false;
 	}
 
-    return thread_args;
+	return thread_args;
 }
 
 
 bool start_thread_obtaining_mutex(pthread_t *thread, pthread_mutex_t *mutex,int wait_to_obtain_ms, int wait_to_release_ms)
 {
 
-    // Allocate memory for thread_data, setup mutex and wait arguments, pass thread_data to created thread using threadfunc() as entry point.
+    	// Allocate memory for thread_data, setup mutex and wait arguments, pass thread_data to created thread using threadfunc() as entry point.
+	
+	struct thread_data *thread_data = (struct thread_data*) malloc(sizeof(struct thread_data));
+	if (thread_data == NULL)
+	{
+		ERROR_LOG("Memory couldn't be allocated for thread_data %d: %s", errno, strerror(errno));
+		return false;
+	}
+	
+	thread_data->mutex = mutex;
+	thread_data->wait_to_obtain_mutex = wait_to_obtain_ms;
+	thread_data->wait_to_release_mutex = wait_to_release_ms;
+	thread_data->thread_complete_success = false;
+	
+	// create pthread using thread_func() as callback
+	int rc = pthread_create(thread, NULL, thread_func, thread_data);
+	if (rc != 0){
+		ERROR_LOG("Thread couldn't be created: %s", strerror(rc));
+		return false;
+	}
+	DEBUG_LOG("Thread was successfully created with ID: %lu", (unsigned long) *thread);
 
-    return false;
+	//destroy pthread using join and get return value
+	void *return_val;
+	rc = pthread_join(thread, &return_val);
+	if (rc != 0){
+		ERROR_LOG("pthread_join for thread %lu failed: %s", (unsigned long)*thread, strerror(rc));
+		return false;
+	}
+	struct thread_data *ret = (struct thread_data*)return_val;
+	if (!ret->thread_complete_success){
+		ERROR_LOG("Thread didn't run successfully!");
+		return false;
+	}
+	free(return_val);
+	
+	return true;
 }
 
