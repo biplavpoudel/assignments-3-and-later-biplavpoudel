@@ -25,7 +25,7 @@ void* threadfunc(void* thread_param)
 	wait_obtain.tv_sec = ms_obtain / 1000;		// gets whole second value
 	wait_obtain.tv_nsec = (ms_obtain % 1000) * 1000000L;	// converts leftover from "ms/1000" into nanoseconds
 
-	DEBUG_LOG("Thread is sleeping for %d milliseconds", thread_args->wait_to_obtain_mutex);
+	DEBUG_LOG("Thread is sleeping for %d milliseconds before mutex locking", thread_args->wait_to_obtain_mutex);
 
 	while (nanosleep(&wait_obtain, &wait_obtain_rem) == -1)
 	{
@@ -47,6 +47,7 @@ void* threadfunc(void* thread_param)
 		thread_args->thread_complete_success = false;
 		return thread_args;
 	}
+	DEBUG_LOG("Mutex locked successfully!");
 
 	// Now let's sleep the thread for a defined time before releasing the mutex
 	long ms_release = thread_args->wait_to_release_mutex;
@@ -55,7 +56,7 @@ void* threadfunc(void* thread_param)
 	wait_release.tv_sec = ms_release / 1000;
 	wait_release.tv_nsec = (ms_release % 1000) * 1000000L;
 
-	DEBUG_LOG("Thread is sleeping for %d milliseconds", thread_args->wait_to_release_mutex);
+	DEBUG_LOG("Thread is sleeping for %d milliseconds before releasing the mutex", thread_args->wait_to_release_mutex);
 
 	while (nanosleep(&wait_release, &wait_release_rem) == -1)
 	{	
@@ -100,11 +101,13 @@ bool start_thread_obtaining_mutex(pthread_t *thread, pthread_mutex_t *mutex,int 
 	int rc = pthread_create(thread, NULL, threadfunc, thread_data);
 	if (rc != 0){
 		ERROR_LOG("Thread couldn't be created: %s", strerror(rc));
+		free(thread_data);
 		return false;
 	}
 	DEBUG_LOG("Thread was successfully created with ID: %lu", (unsigned long) *thread);
+	
+	/*destroy pthread using join and get return value
 
-	//destroy pthread using join and get return value
 	void *return_val;
 	rc = pthread_join(*thread, &return_val);
 	if (rc != 0){
@@ -117,7 +120,8 @@ bool start_thread_obtaining_mutex(pthread_t *thread, pthread_mutex_t *mutex,int 
 		return false;
 	}
 	free(return_val);
-	
+
+	*/	
 	return true;
 }
 
