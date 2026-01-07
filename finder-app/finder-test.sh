@@ -1,6 +1,7 @@
 #!/bin/sh
 # Tester script for assignment 1 and assignment 2
 # Author: Siddhant Jajoo
+# Updated by: Biplav Poudel
 
 set -e
 set -u
@@ -8,7 +9,15 @@ set -u
 NUMFILES=10
 WRITESTR=AELD_IS_FUN
 WRITEDIR=/tmp/aeld-data
-username=$(cat conf/username.txt)
+
+# modified to check for username.txt in "/etc/finder-app/conf/" for later assignments (unsure if this is necessary!); if not found, revert to "./conf/" dir
+if [ -f /etc/finder-app/conf/username.txt ]; then
+	CONFDIR="/etc/finder-app/conf"
+else
+	CONFDIR="./conf"
+fi
+	
+username=$(cat "${CONFDIR}/username.txt")
 
 if [ $# -lt 3 ]
 then
@@ -58,7 +67,8 @@ do
 	./writer "$WRITEDIR/${username}$i.txt" "$WRITESTR"
 done
 
-OUTPUTSTRING=$(./finder.sh "$WRITEDIR" "$WRITESTR")
+# writing the output of finder command to /tmp/assignment4-result.txt as specified in the assignment-4-part-2
+OUTPUTSTRING=$(./finder.sh "$WRITEDIR" "$WRITESTR" | tee /tmp/assignment4-result.txt)
 
 # remove temporary directories
 rm -rf /tmp/aeld-data
