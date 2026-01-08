@@ -71,11 +71,11 @@ fi
 
 for i in $( seq 1 $NUMFILES)
 do
-	./writer "$WRITEDIR/${username}$i.txt" "$WRITESTR"
+	writer "$WRITEDIR/${username}$i.txt" "$WRITESTR"
 done
 
 # writing the output of finder command to /tmp/assignment4-result.txt as specified in the assignment-4-part-2
-OUTPUTSTRING=$(./finder.sh "$WRITEDIR" "$WRITESTR" | tee /tmp/assignment4-result.txt)
+OUTPUTSTRING=$(finder.sh "$WRITEDIR" "$WRITESTR" | tee /tmp/assignment4-result.txt)
 
 # remove temporary directories
 rm -rf /tmp/aeld-data
