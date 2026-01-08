@@ -41,7 +41,14 @@ echo "Writing ${NUMFILES} files containing string ${WRITESTR} to ${WRITEDIR}"
 rm -rf "${WRITEDIR}"
 
 # create $WRITEDIR if not assignment1
-assignment=`cat ./conf/assignment.txt`
+# modified the file lookup for assignment 4 or later
+if [ ! -f /etc/finder-app/assignment.txt ]; then
+	ASSIGN_DIR='./conf'
+else
+	ASSIGN_DIR='/etc/finder-app/conf'
+fi
+
+assignment=$(cat "${ASSIGN_DIR}/assignment.txt")
 
 if [ $assignment != 'assignment1' ]
 then
