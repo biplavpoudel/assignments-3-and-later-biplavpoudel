@@ -18,12 +18,13 @@
 #include<string.h>
 #include<sys/types.h>
 #include<sys/socket.h>
+#include<netdb.h>
 #include<syslog.h>
 #include<signal.h>
 
 
 #define PORT 9000
-#define BACKLOG 10	// no. of pending connections before refusal
+#define BACKLOG 10	// no. of queued pending connections before refusal
 
 int main(int argc, char *argv[])
 {	
@@ -79,16 +80,23 @@ int main(int argc, char *argv[])
 		break;		// if successfully bound, we break from the loop
 	}
 	
+	freeaddrinfo(servinfo);		// freeing servinfo to avoid memory leak
+		
 	// struct servinfo exhausted. no socket bounded to address!	
 	if (p == NULL)
 	{
 		fprintf(stderr, "Server socket failed to bind!");
+		return -1;
 	}
 
 	//now we listen for incoming connection
+	if (listen(sockfd, BACKLOG) == -1)
+	{
+		fprintf(stderr, "Listening on socket refused: %s\n", strerror(errno));
+		return -1;
+	}	
+	
 		
-
-
 
 	return 0;
 }
