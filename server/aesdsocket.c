@@ -52,6 +52,7 @@ void handle_server_termination(int sig)
 int main(int argc, char *argv[])
 {	
 	int sockfd;
+	char *writefile = "/var/tmp/aesdsocketdata";
 
 	// first let's get addrinfo to bind the socket using getaddrinfo()
 	struct addrinfo hints, *servinfo; 	//args for getaddrinfo(); *servinfo points to result
@@ -212,7 +213,37 @@ int main(int argc, char *argv[])
 				}
 				recv_buffer = new_buffer;		//passing ptr from newly allocated memory
 				memcpy(recv_buffer + buffer_size, temp, bytes_read);		// copies `bytes_read` bytes to recv_buffer
-				buffer_size += bytes_read;		//updating offset for recv_buffer	
+				buffer_size += bytes_read;		//updating offset for recv_buffer
+				
+				// now we check for end of packet inside recv_buffer by looking for newline
+				for (size_t i = 0; i < buffer_size; i++)
+				{
+					if (recv_buffer[i] == '\n'){
+						size_t packet_len = i + 1;	// extra 1 for `\n`
+
+						//appending commences
+						int fd = open(writefile, O_CREAT | O_RDWR | O_APPEND, 0644);
+						if (fd == -1){
+							perror("file /var/tmp/aesdsocketdata couldn't be either created or appended");
+							close(new_sockfd);
+							free(recv_buffer);
+							return -1;
+						}
+						ssize_t total_written = 0;
+						while (total_written < packet_len){
+							ssize_t nr = write(fd, recv_buffer + total_written, packet_len - total_written);
+							if (nr == -1){
+								if (errno == EINTR) continue;
+								perror("write failed");
+								close(fd);
+								close(new_sockfd);
+								free(recv_buffer);
+								return -1;
+							}
+							total_written += nr;
+						}
+					}
+				}
 			}
 			
 
