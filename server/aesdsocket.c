@@ -26,6 +26,14 @@
 #define PORT 9000
 #define BACKLOG 10	// no. of queued pending connections before refusal
 
+// function that saves the current errno, clears all the zombie child processes and reverts errno to previous value
+void sigchild_handler(int sig)
+{
+	int parent_errno = errno;
+	while(waitpid(-1, NULL, WNOHANG) > 0);		//-1 means wait for any child process; WNOHANG means don't block
+	errno = parent_errno;
+}
+
 int main(int argc, char *argv[])
 {	
 	int sockfd; 
@@ -96,6 +104,7 @@ int main(int argc, char *argv[])
 		return -1;
 	}	
 	
+	// now before accepting new connection, we have to remove all zombie child processes	
 		
 
 	return 0;
