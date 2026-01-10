@@ -26,11 +26,12 @@
 #define PORT "9000"
 #define BACKLOG 10	// no. of queued pending connections before refusal
 
+#define CHUNK_SIZE 1024		// no. of bytes we can read at once from client
+
 // we need a global variable that is read/write atomic to inform `accept loop` of execution termination
 // also we need to inform compiler that the variable can change outside of the normal flow of code
 // like through signal interrupts; so compiler never caches this into register and reloads it time-to-time
 static volatile sig_atomic_t exit_requested = 0;
-
 
 // function that saves the current errno, clears all the zombie child processes and reverts errno to previous value
 void sigchild_handler(int sig)
@@ -183,14 +184,53 @@ int main(int argc, char *argv[])
 		}
 		else
 			fprintf(stderr, "Client information couldn't be determined");
+		
+		pid_t pid = fork();
+		
+		if (pid == 0)
+		{
+			close(sockfd);		// close child process's inherited sockfd
 
-		close(new_sockfd);
+			//now we read packets from the client and append them in `/var/tmp/aesdsocketdata`
+			//newline is used to separate packets received
+
+			char *recv_buffer = NULL;	// buffer is dynamically allocated as packets are read from client
+			size_t buffer_size = 0;
+
+			char temp[CHUNK_SIZE];
+			ssize_t bytes_read;
+
+			while((bytes_read = recv(new_sockfd, temp, CHUNK_SIZE, 0)) > 0) 	// return value of 0 means end-of-file
+			{
+				char *new_buffer = realloc(recv_buffer, buffer_size + bytes_read);	// resize recv_buffer based on bytes_read
+				if (!new_buffer)
+				{
+					perror("realloc to recv_buffer failed");
+					free(recv_buffer);
+					close(new_sockfd);
+					break;
+				}
+				recv_buffer = new_buffer;		//passing ptr from newly allocated memory
+				memcpy(recv_buffer + buffer_size, temp, bytes_read);		// copies `bytes_read` bytes to recv_buffer
+				buffer_size += bytes_read;		//updating offset for recv_buffer	
+			}
+			
+
+			//after the data transfer completes, we return the full content to client
+		}
+		else if (pid > 0)	
+			close(new_sockfd);
+		else
+		{
+			fprintf(stderr, "Child process couldn't be forked: %s\n", strerror(errno));
+			close(new_sockfd);
+		}
 	}
 
 	syslog(LOG_INFO, "Caught signal, exiting");
 
 	close(sockfd);
-	unlink('/var/tmp/aesdsocketdata');
+	unlink("/var/tmp/aesdsocketdata");
 
 	closelog();
 
