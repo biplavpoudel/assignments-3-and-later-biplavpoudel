@@ -23,12 +23,13 @@
 #include<signal.h>
 
 
-#define PORT 9000
+#define PORT "9000"
 #define BACKLOG 10	// no. of queued pending connections before refusal
 
 // function that saves the current errno, clears all the zombie child processes and reverts errno to previous value
 void sigchild_handler(int sig)
-{
+{	
+	(void)s;					// supresses unused variable `s` warnings
 	int parent_errno = errno;
 	while(waitpid(-1, NULL, WNOHANG) > 0);		//-1 means wait for any child process; WNOHANG means don't block
 	errno = parent_errno;
@@ -36,7 +37,7 @@ void sigchild_handler(int sig)
 
 int main(int argc, char *argv[])
 {	
-	int sockfd; 
+	int sockfd;
 
 	// first let's get addrinfo to bind the socket using getaddrinfo()
 	struct addrinfo hints, *servinfo; 	//args for getaddrinfo(); *servinfo points to result
@@ -104,8 +105,53 @@ int main(int argc, char *argv[])
 		return -1;
 	}	
 	
+	struct sigaction sa;		//struct that stores the sa_handler, sa_mask and others for handling zombie child processes
+	
 	// now before accepting new connection, we have to remove all zombie child processes	
-		
+	sa.sa_handler = &sigchild_handler;	//pointer is passed; & is unneeded as C implicitly assigns fucntion pointer if no paranthesis passed
+	sigemptyset(&sa.sa_mask);		// initializes the signalset `sa.sa_mask` to empty; so no signal gets blocked except SIGCHILD
+	sa.sa_flags = SA_RESTART;		// restarts accept() syscall after SIGCHILD interrupts and is handled by sigchild_handler()	
+	
+	if(sigaction(SIGCHILD, &sa, NULL) == -1)
+	{
+		fprintf(stderr, "Sigaction failed to kill all the terminated child processes:%s\n", strerror(errno));
+		return -1;
+	}
 
+	// Now we start accepting connections
+	printf("Waiting for connections...");
+	
+	int new_sockfd;			// new_sockfd for new accepted socket connection; different from default listening sockfd
+	struct sockaddr_storage incoming_addr;
+	socklen_t size_inaddr = sizeof(incoming_addr);
+	char host[NI_MAXHOST];		// NI_MAXHOST and NI_MAXSERV are set from <netdb.h>
+	char service[NI_MAXSERV];
+	
+	openlog("server", LOG_PID | LOG_NDELAY, LOG_USER);
+
+	while (1)
+	{
+		new_sockfd = accept(sockfd, (struct sockaddr *)&incoming_addr, &size_inaddr);
+
+		if (new_sockfd == -1)
+		{
+			fprintf(stderr, "Socket connection refused: %s\n", strerror(errno));
+			continue;
+		}
+
+		// if connection was established, we log the client information
+		int rc = getnameinfo((struct sockaddr *)&incoming_addr, size_inaddr,
+			       	host, sizeof(host), service, sizeof(service),
+			       	NI_NUMERICHOST | NI_NUMERICSERV);	
+		if (rc == 0)
+		{	
+			printf("Server connected with client %s:%s\n", host, service);
+			syslog(LOG_INFO, "Accepted connection from %s\n", host);
+		}
+		else
+			fprintf(stderr, "Client information couldn't be determined");
+	}
+
+	closelog();
 	return 0;
 }
