@@ -23,7 +23,7 @@
 #include<syslog.h>
 #include<signal.h>
 #include<fcntl.h>
-
+#include <sys/file.h> 
 
 #define PORT "9000"
 #define BACKLOG 10	// no. of queued pending connections before refusal
@@ -41,10 +41,10 @@ void sigchild_handler(int sig)
 	(void)sig;					// supresses unused variable `sig` warnings
 	int parent_errno = errno;
 	pid_t pid;
-	while(pid = waitpid(-1, NULL, WNOHANG)) > 0){	//-1 means wait for any child process; WNOHANG means don't block
-		printf("Child process %d reaped\n", pid);
+	while((pid = waitpid(-1, NULL, WNOHANG)) > 0){	//-1 means wait for any child process; WNOHANG means don't block
+		syslog(LOG_DEBUG,"Child process %d reaped", pid);
 	}
-	if (pid = -1 && errno != ECHILD){			// errno due to no child should be safely ignored
+	if (pid == -1 && errno != ECHILD){			// errno due to no child should be safely ignored
 		perror("waitpid for child gave error");
 	}
 	errno = parent_errno;
@@ -56,7 +56,7 @@ void child_cleanup(int sockfd, char *recv_buffer, int file_fd, const char *host)
     if (file_fd != -1) close(file_fd);
     if (sockfd != -1) close(sockfd);
     if (recv_buffer) free(recv_buffer);
-    if (host) syslog(LOG_INFO, "Closed connection from %s\n", host);
+    if (host) syslog(LOG_INFO, "Closed connection from %s", host);
     _exit(EXIT_FAILURE);  // exits safely
 }
 
@@ -213,7 +213,7 @@ int main()
 		if (rc == 0)
 		{	
 			printf("Server connected with client %s:%s\n", host, service);
-			syslog(LOG_INFO, "Accepted connection from %s\n", host);
+			syslog(LOG_INFO, "Accepted connection from %s", host);
 		}
 		else
 			fprintf(stderr, "Client information couldn't be determined");
@@ -222,6 +222,7 @@ int main()
 		
 		if (pid == 0)
 		{
+			int fd = -1; // initialize at the top of child process
 			close(sockfd);		// close child process's inherited sockfd
 
 			//now we read packets from the client and append them in `/var/tmp/aesdsocketdata`
@@ -239,7 +240,7 @@ int main()
 				if (!new_buffer)
 				{
 					perror("realloc to recv_buffer failed");
-					child_cleanup(new_sockfd, recv_buffer, -1, host);
+					child_cleanup(new_sockfd, recv_buffer, fd, host);
 				}
 				recv_buffer = new_buffer;		//passing ptr from newly allocated memory
 				memcpy(recv_buffer + buffer_size, temp, bytes_read);		// copies `bytes_read` bytes to recv_buffer
@@ -257,6 +258,7 @@ int main()
 							perror("file /var/tmp/aesdsocketdata couldn't be either created or appended");
 							child_cleanup(new_sockfd, recv_buffer, fd, host);
 						}
+						flock(fd, LOCK_EX);			//mutex lock for writing
 						// considering partial writes
 						ssize_t total_written = 0;
 						while (total_written < packet_len){
@@ -273,6 +275,7 @@ int main()
 							perror("file close failed");
 							child_cleanup(new_sockfd, recv_buffer, fd, host);
 						}
+						flock(fd, LOCK_UN);			//unlock mutex
 						
 						// after each successful packet read/append, we now send back the full file to client
 						fd = open(packet_file, O_RDONLY);
@@ -280,9 +283,10 @@ int main()
 							perror("file opening failed for read");
 							child_cleanup(new_sockfd, recv_buffer, fd, host);
 						}
-
+						flock(fd, LOCK_SH);			//shared mutex lock
 						char buf[CHUNK_SIZE];
-						while((ssize_t nr = read(fd, buf, CHUNK_SIZE)) > 0){
+						ssize_t nr;
+						while((nr = read(fd, buf, CHUNK_SIZE)) > 0){
 							ssize_t total_sent = 0;
 							// accounting for partial read from the buffer
 							while(total_sent < nr){
@@ -307,6 +311,7 @@ int main()
                             perror("file close failed");
 							_exit(EXIT_FAILURE);
                     	}
+						flock(fd, LOCK_UN);			//unlock mutex
 
 						//now we remove processed packet out of the buffer
 						size_t remaining_packets = buffer_size - packet_len;
@@ -321,7 +326,7 @@ int main()
 			}
 			close(new_sockfd);
 			free(recv_buffer);
-			syslog(LOG_INFO, "Closed connection from %s\n", host);
+			syslog(LOG_INFO, "Closed connection from %s", host);
 			_exit(0);	//exiting out of child immediately
 		}
 		else if (pid > 0)	
