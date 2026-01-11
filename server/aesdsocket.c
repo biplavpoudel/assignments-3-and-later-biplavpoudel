@@ -26,7 +26,7 @@
 #define PORT "9000"
 #define BACKLOG 10	// no. of queued pending connections before refusal
 
-#define CHUNK_SIZE 1024		// no. of bytes we can read at once from client
+#define CHUNK_SIZE 4096		// no. of bytes we can read/write at once
 
 // we need a global variable that is read/write atomic to inform `accept loop` of execution termination
 // also we need to inform compiler that the variable can change outside of the normal flow of code
@@ -52,7 +52,7 @@ void handle_server_termination(int sig)
 int main(int argc, char *argv[])
 {	
 	int sockfd;
-	char *writefile = "/var/tmp/aesdsocketdata";
+	char *packet_file = "/var/tmp/aesdsocketdata";
 
 	// first let's get addrinfo to bind the socket using getaddrinfo()
 	struct addrinfo hints, *servinfo; 	//args for getaddrinfo(); *servinfo points to result
@@ -221,14 +221,15 @@ int main(int argc, char *argv[])
 					if (recv_buffer[i] == '\n'){
 						size_t packet_len = i + 1;	// extra 1 for `\n`
 
-						//appending commences
-						int fd = open(writefile, O_CREAT | O_RDWR | O_APPEND, 0644);
+						//appending packet of size `packetlen`
+						int fd = open(packet_file, O_CREAT | O_RDWR | O_APPEND, 0644);
 						if (fd == -1){
 							perror("file /var/tmp/aesdsocketdata couldn't be either created or appended");
 							close(new_sockfd);
 							free(recv_buffer);
 							return -1;
 						}
+						// considering partial writes
 						ssize_t total_written = 0;
 						while (total_written < packet_len){
 							ssize_t nr = write(fd, recv_buffer + total_written, packet_len - total_written);
@@ -242,12 +243,57 @@ int main(int argc, char *argv[])
 							}
 							total_written += nr;
 						}
+						if (close(fd) == -1)
+						{
+							perror("file close failed");
+							return -1;
+						}
+						
+						// after each successful packet read/append, we now send back the full file to client
+						fd = open(packet_file, O_RDONLY);
+						if (fd == -1){
+							perror("file opening failed for read");
+							return -1;
+						}
+
+						char buf[CHUNK_SIZE];
+						while((nr = read(fd, buf, CHUNK_SIZE)) > 0){
+							ssize_t total_sent = 0;
+							// accounting for partial read from the buffer
+							while(total_sent < nr){
+								ssize_t ns = send(new_sockfd, buf + total_sent, nr - total_sent, 0);
+								
+								if (ns == -1){
+									if (errno == EINTR)	continue;
+									perror("sending failed");
+									close(fd);
+									close(new_sockfd);
+									return -1;
+								}
+								total_sent += ns;
+							}
+						}
+						if (nr == 0)	break;
+						else if (nr == -1){
+							if (errno == EINTR)	continue;
+							perror("failed to read from file");
+						}
+						if (close(fd) == -1)
+                                                {
+                                                        perror("file close failed");
+                                                        return -1;
+                                                }
+	
 					}
+					//now we remove processed packet out of the buffer
+					size_t remaining_packets = buffer_size - packet_len;
+					memmove(recv_buffer, recv_buffer+ packet_len, remaining_packets);	// replace the recv_buffer with remianing data
+					buffer_size = remaining_packets;
+					
+					i = -1; 		// restart scan for newline from beginning of remaining packets
 				}
 			}
-			
-
-			//after the data transfer completes, we return the full content to client
+		
 		}
 		else if (pid > 0)	
 			close(new_sockfd);
