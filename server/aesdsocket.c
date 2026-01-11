@@ -18,9 +18,11 @@
 #include<string.h>
 #include<sys/types.h>
 #include<sys/socket.h>
+#include<sys/wait.h>
 #include<netdb.h>
 #include<syslog.h>
 #include<signal.h>
+#include<fcntl.h>
 
 
 #define PORT "9000"
@@ -38,7 +40,13 @@ void sigchild_handler(int sig)
 {	
 	(void)sig;					// supresses unused variable `sig` warnings
 	int parent_errno = errno;
-	while(waitpid(-1, NULL, WNOHANG) > 0);		//-1 means wait for any child process; WNOHANG means don't block
+	pid_t pid;
+	while(pid = waitpid(-1, NULL, WNOHANG)) > 0){	//-1 means wait for any child process; WNOHANG means don't block
+		printf("Child process %d reaped\n", pid);
+	}
+	if (pid = -1 && errno != ECHILD){			// errno due to no child should be safely ignored
+		perror("waitpid for child gave error");
+	}
 	errno = parent_errno;
 }
 
@@ -49,7 +57,7 @@ void handle_server_termination(int sig)
 	exit_requested = 1;
 }
 
-int main(int argc, char *argv[])
+int main()
 {	
 	int sockfd;
 	char *packet_file = "/var/tmp/aesdsocketdata";
@@ -64,6 +72,7 @@ int main(int argc, char *argv[])
 	hints.ai_socktype = SOCK_STREAM;	// TCP type
 	
 	int yes = 1;				// for setsockopt's *optval
+	int status;
 	
 	if ((status = getaddrinfo(NULL, PORT, &hints, &servinfo)) != 0)
 	{
@@ -87,7 +96,7 @@ int main(int argc, char *argv[])
 		// i.e. to avoid 'Address already in use' bind error upon restart, when the address in TIME_WAIT is already free
 		if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1)
 		{
-			fprinf(stderr, "socket options couldn't be set: %s\n", strerror(errno));
+			fprintf(stderr, "socket options couldn't be set: %s\n", strerror(errno));
 			close(sockfd);
 			return -1;	
 		}
@@ -96,11 +105,23 @@ int main(int argc, char *argv[])
 		if (bind(sockfd, p->ai_addr, p->ai_addrlen) == -1)
 		{
 			close(sockfd);
-			fprinf(stderr, "socket couldn't be bound to the %s address: %s\n", pi->ai_addr, strerror(errno));
+			fprintf(stderr, "socket couldn't be bound: %s\n", strerror(errno));
 			continue;		// we try to bind new address from next servinfo to the socket
 		}
 		
-		fprintf(stdout, "Socket of type %s was successfully created and bound to the address: %s\n", p->ai_socktype, p->ai_addr);
+		// if success, we try to get the socket information using getsockname()
+		struct sockaddr_storage sa;
+    	socklen_t sa_len = sizeof(sa);
+
+    	if (getsockname(sockfd, (struct sockaddr *)&sa, &sa_len) == 0) {
+        	char host[NI_MAXHOST];
+        	char service[NI_MAXSERV];
+
+        	if (getnameinfo((struct sockaddr *)&sa, sa_len, host, sizeof(host), service, sizeof(service), NI_NUMERICHOST | NI_NUMERICSERV) == 0) {
+        	    printf("Server successfully bound to %s:%s\n", host, service);
+        	}
+    	}	
+
 		break;		// if successfully bound, we break from the loop
 	}
 	
@@ -124,17 +145,17 @@ int main(int argc, char *argv[])
 	
 	// now before accepting new connection, we have to remove all zombie child processes	
 	purge.sa_handler = &sigchild_handler;	//pointer is passed; & is unneeded as C implicitly assigns fucntion pointer if no paranthesis passed
-	sigemptyset(&purge.sa_mask);		// initializes the signalset `sa.sa_mask` to empty; so no signal gets blocked except SIGCHILD
-	purge.sa_flags = SA_RESTART;		// restarts accept() syscall after SIGCHILD interrupts and is handled by sigchild_handler()	
+	sigemptyset(&purge.sa_mask);		// initializes the signalset `sa.sa_mask` to empty; so no signal gets blocked except SIGCHLD
+	purge.sa_flags = SA_RESTART;		// restarts accept() syscall after SIGCHLD interrupts and is handled by sigchild_handler()	
 	
-	if(sigaction(SIGCHILD, &purge, NULL) == -1)
+	if(sigaction(SIGCHLD, &purge, NULL) == -1)
 	{
 		fprintf(stderr, "Sigaction failed to kill all the terminated child processes:%s\n", strerror(errno));
 		return -1;
 	}
 
 	// Now we start accepting connections
-	printf("Waiting for connections...");
+	printf("Waiting for connections...\n");
 	
 	int new_sockfd;			// new_sockfd for new accepted socket connection; different from default listening sockfd
 	struct sockaddr_storage incoming_addr;
@@ -168,8 +189,8 @@ int main(int argc, char *argv[])
 	{
 		new_sockfd = accept(sockfd, (struct sockaddr *)&incoming_addr, &size_inaddr);
 
-		if (new_sockfd == -1)
-		{
+		if (new_sockfd == -1){
+			if (errno == EINTR && exit_requested) break;			// if -1 is due to SIGINT/SIGTERM, break out of the accept loop; else try again for connection
 			fprintf(stderr, "Socket connection refused: %s\n", strerror(errno));
 			continue;
 		}
@@ -219,7 +240,7 @@ int main(int argc, char *argv[])
 				for (size_t i = 0; i < buffer_size; i++)
 				{
 					if (recv_buffer[i] == '\n'){
-						size_t packet_len = i + 1;	// extra 1 for `\n`
+						ssize_t packet_len = i + 1;			// extra 1 for `\n`
 
 						//appending packet of size `packetlen`
 						int fd = open(packet_file, O_CREAT | O_RDWR | O_APPEND, 0644);
@@ -257,7 +278,7 @@ int main(int argc, char *argv[])
 						}
 
 						char buf[CHUNK_SIZE];
-						while((nr = read(fd, buf, CHUNK_SIZE)) > 0){
+						while((ssize_t nr = read(fd, buf, CHUNK_SIZE)) > 0){
 							ssize_t total_sent = 0;
 							// accounting for partial read from the buffer
 							while(total_sent < nr){
@@ -273,27 +294,32 @@ int main(int argc, char *argv[])
 								total_sent += ns;
 							}
 						}
-						if (nr == 0)	break;
+						if (nr == 0)	break;			//file transfer completed
 						else if (nr == -1){
 							if (errno == EINTR)	continue;
 							perror("failed to read from file");
 						}
 						if (close(fd) == -1)
-                                                {
-                                                        perror("file close failed");
-                                                        return -1;
-                                                }
-	
-					}
-					//now we remove processed packet out of the buffer
-					size_t remaining_packets = buffer_size - packet_len;
-					memmove(recv_buffer, recv_buffer+ packet_len, remaining_packets);	// replace the recv_buffer with remianing data
-					buffer_size = remaining_packets;
+                        {
+                            perror("file close failed");
+							return -1;
+                    	}
+
+						//now we remove processed packet out of the buffer
+						size_t remaining_packets = buffer_size - packet_len;
+						memmove(recv_buffer, recv_buffer + packet_len, remaining_packets);	// replace the recv_buffer with remianing data
+						buffer_size = remaining_packets;
 					
-					i = -1; 		// restart scan for newline from beginning of remaining packets
+						// restart scan for newline from beginning of remaining packets
+						i = -1; 
+
+					}
 				}
 			}
-		
+			close(new_sockfd);
+			free(recv_buffer);
+			syslog(LOG_INFO, "Closed connection from %s\n", host);
+			_exit(0);	//exiting out of child immediately
 		}
 		else if (pid > 0)	
 			close(new_sockfd);
