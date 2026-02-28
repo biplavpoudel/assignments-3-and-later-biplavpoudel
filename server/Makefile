@@ -1,11 +1,13 @@
 ifeq ($(CROSS_COMPILE),)
 	CC ?= gcc
 else
-	CC = $(CROSS_COMPILE)gcc
+	CC ?= $(CROSS_COMPILE)gcc
 endif
 
-CFLAGS = -Wall -Wextra -O2
-TARGET = aesdsocket
+CFLAGS ?= -g -Wall -Wextra -O2
+TARGET ?= aesdsocket
+LDFLAGS ?= -lpthread -lrt
+
 SRCS = aesdsocket.c
 OBJS = $(SRCS:.c=.o)
 
@@ -14,7 +16,7 @@ OBJS = $(SRCS:.c=.o)
 all default: $(TARGET)
 
 $(TARGET): $(OBJS)
-	$(CC) $(CFLAGS) -o $@ $^
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^
 	@echo "Linking $(OBJS) into $(TARGET)"
 
 %.o: %.c

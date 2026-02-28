@@ -93,8 +93,7 @@ typedef struct thread_node
 
 	atomic_bool completed; // sets to true if the thread completes
 
-	TAILQ_ENTRY(thread_node)
-	nodes; // the TAILQ_ENTRY macro uses the struct name
+	TAILQ_ENTRY(thread_node) nodes; // the TAILQ_ENTRY macro uses the struct name
 } node_t;
 
 /* this creates a head_t that makes it easy for us to pass pointers to
@@ -148,7 +147,7 @@ static void remove_completed_threads(head_t *head)
 	pthread_mutex_unlock(&list_mutex);
 }
 
-// Unblock all worker threads on shutdown request
+// Unblock all worker threads and close client fds on shutdown request
 static void request_exit_all_threads(head_t *head)
 {
 	pthread_mutex_lock(&list_mutex);
@@ -165,7 +164,9 @@ static void request_exit_all_threads(head_t *head)
 	pthread_mutex_unlock(&list_mutex);
 }
 
-// separate cleanup for worker thread for socket connection
+// separate cleanup for worker thread for socket connection.
+// since p_recv_buffer is a pointer itself, passing "as it is" will only make its local copy NULL, not its original value.
+// so we pass the pointer to the pointer of p_recv_buffer to work on the actual value
 static void thread_cleanup(node_t *worker, char **p_recv_buffer)
 {
 	if (p_recv_buffer && *p_recv_buffer)
