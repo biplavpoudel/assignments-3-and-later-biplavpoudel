@@ -8,6 +8,7 @@
  *
  */
 
+#include <stddef.h>
 #include <stdint.h>
 #ifdef __KERNEL__
 #include <linux/string.h>
@@ -30,10 +31,30 @@
 struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct aesd_circular_buffer *buffer,
             size_t char_offset, size_t *entry_offset_byte_rtn )
 {
-    /**
-    * TODO: implement per description
-    */
-    return NULL;
+    uint8_t next_entry = 0;
+    size_t remaining_offset = char_offset;
+
+    // Returnss void if the pointers point to nowhere
+    if ((buffer == NULL) || (entry_offset_byte_rtn == NULL)) return NULL;
+
+    // Returns NULL if buffer pointer is also empty
+    if (!buffer->full && (buffer->out_offs = buffer->in_offs)) return NULL;
+
+    while(true)
+    {
+        // returns NULL if not enough entry for char_offset
+        if (buffer->entry[next_entry].buffptr == NULL) return NULL;
+
+        else if (buffer->entry[next_entry].size < remaining_offset)
+        {
+            remaining_offset -= buffer->entry[next_entry].size;
+            next_entry = (next_entry + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
+            continue;
+        }
+        *(entry_offset_byte_rtn) = remaining_offset;
+        break;   
+    }
+    return &buffer->entry[next_entry];
 }
 
 /**
